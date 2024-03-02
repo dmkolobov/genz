@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/dmkolobov/genz"
 readme = "README.md"
+description = "Access guards based on invariant lifetime markers."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
