@@ -94,7 +94,7 @@ pub fn with_scope<F, Z>(f: F) -> Z
 /// with_region(|a| with_region(|b| same_region(a, b))); // fails to compile
 /// ```
 /// 
-/// This invariant property is passed through to any type referencing the region.
+/// This property is passed through to any type referencing the region:
 ///
 /// ```compile_fail
 /// # use genz::*;
