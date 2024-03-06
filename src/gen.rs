@@ -1,25 +1,18 @@
 //! Access guarding with an invariant lifetime.
 
 use std::{borrow::BorrowMut, marker::PhantomData};
-use crate::{lifetime::STATIC_REGION, with_region, Region};
+use crate::{lifetime::STATIC_REGION, with_region, Region, Storable};
 
-/// The trait of values containing generative type markers which may be stored.
-pub trait Storable: BorrowMut<Self::Generative<'static>> + From<Self::Generative<'static>>
-{
-  /// A value containing type markers which are generative in the region '`c`.
-  type Generative<'c>;
-}
-
-/// Invoke `f` with a generative type marker in an arbitrary region.
+/// Invoke `f` with a type marker which is unique for an invariant lifetime.
 #[inline]
-pub fn with_type<U, Z>(f: impl for <'c> FnOnce(GenType<'c, U>) -> Z) -> Z 
+pub fn with_type<U, Z>(f: impl for <'c> FnOnce(UniqueType<'c, U>) -> Z) -> Z 
 {
-  with_region(|region| f(GenType(region, PhantomData)))
+  with_region(|region| f(UniqueType(region, PhantomData)))
 }
 
-/// Attempt to invoke `f` with a tuple of generative type markers in an arbitrary region.
+/// Attempt to invoke `f` with an invariant lifetime marker and a tuple of type markers that are unique for that lifetime.
 ///
-/// If any of the requested types are duplicates, `None` is returned.
+/// If any types in the tuple are duplicates, `None` is returned.
 #[inline]
 pub fn try_with_types<Types: TryGenTuple, Z>(f: impl for <'c> FnOnce(Region<'c>, Types::Tuple<'c>) -> Z) -> Option<Z> 
 {
@@ -33,7 +26,7 @@ pub fn with_types<Types: TryGenTuple, Z>(f: impl for <'c> FnOnce(Region<'c>, Typ
   try_with_types(f).unwrap()
 }
 
-/// A structure for storing values containing generative type markers.
+/// A structure for storing values containing unique types.
 #[repr(transparent)]
 pub struct Gen<T>(T);
 
@@ -51,39 +44,25 @@ impl<Z: Storable> Gen<Z>
     f(STATIC_REGION).map(|inner| Gen(inner.into()))
   }
 
-  /// Created a stored value by invoking `f` with a generative type marker in an arbtirary region.
+  /// Created a stored value by invoking `f` with a type marker which is unique for an invariant lifetime.
   #[inline]
-  pub fn from_type<U>(f: impl for <'c> FnOnce(GenType<'c, U>) -> Z::Generative<'c>) -> Self 
+  pub fn from_type<U>(f: impl for <'c> FnOnce(UniqueType<'c, U>) -> Z::Generative<'c>) -> Self 
   {
-    Self::from_fn(|region| f(GenType(region, PhantomData)))
+    Self::from_fn(|region| f(UniqueType(region, PhantomData)))
   }
 
-  /// Attempt to create a stored value by invoking `f` with a tuple of generative type markers in an arbitrary region.
+  /// Attempt to create a stored value by invoking `f` with an invariant lifetime marker and a tuple of type markers that are unique for that lifetime.
   ///
-  /// If any of the requested types are duplicates, `None` is returned.
+  /// If any types in the tuple are duplicates, `None` is returned.
   /// ```
   /// # use genz::*;
-  ///
-  /// struct Coll<'c, T>(GenType<'c, T>);
-  ///
-  /// struct Ctx<'c, A, B>
-  /// {
-  ///   a: Coll<'c, A>,
-  ///   b: Coll<'c, B>,
-  /// }
-  ///
-  /// impl<A, B> Storable for Ctx<'static, A, B>
-  /// {
-  ///   type Generative<'c> = Ctx<'c, A, B>;
-  /// }
-  /// 
-  /// let gen = Gen::<Ctx<_, _>>::try_from_types::<(u8, u16)>(|_, (t1, t2)| {
-  ///   Ctx {a: Coll(t1), b: Coll(t2)}
+  /// let gen = Gen::<(UniqueType<u8>, UniqueType<u16>)>::try_from_types::<(u8, u16)>(|_, (t1, t2)| {
+  ///   (t1, t2)
   /// }).unwrap();
   ///
   /// // `None` is returned because `u8` is repeated in the tuple
-  /// assert!(Gen::<Ctx<_, _>>::try_from_types::<(u8, u8)>(|_, (t1, t2)| {
-  ///   Ctx {a: Coll(t1), b: Coll(t2)}
+  /// assert!(Gen::<(UniqueType<u8>, UniqueType<u8>)>::try_from_types::<(u8, u8)>(|_, (t1, t2)| {
+  ///   (t1, t2)
   /// }).is_none())
   /// ```
   #[inline]
@@ -99,14 +78,14 @@ impl<Z: Storable> Gen<Z>
     Self::try_from_types(f).unwrap()
   }
 
-  /// Invoke `f` with a reference to the value inside an arbitrary region.
+  /// Invoke `f` with a reference to the value.
   #[inline]
   pub fn with_ref<R>(&self, f: impl for<'c> FnOnce(&Z::Generative<'c>) -> R) -> R 
   {
     f(self.0.borrow())
   }
 
-  /// Invoke `f` with a mutable reference to the value inside an arbitrary region.
+  /// Invoke `f` with a mutable reference to the value.
   #[inline] 
   pub fn with_mut<R>(&mut self, f: impl for<'c> FnOnce(&mut Z::Generative<'c>) -> R) -> R 
   {
@@ -116,35 +95,36 @@ impl<Z: Storable> Gen<Z>
 
 /// A marker for a type which is guaranteed to be unique within some region of code.
 ///
-/// A marker `GenType<'c, T>` is __generative__ in the region of code with lifetime `'c` if it is impossible to invoke
-/// the following function:
+/// When we have a `UniqueType<'c, T>`, then the type `T` is guaranteed to be unique for lifetime `'c`. 
+///
+/// More precisely, it is impossible to call the following without resorting to `unsafe` code:
 ///
 /// ```
 /// # use genz::*;
-/// fn same_type<'c, T>(t1: GenType<'c, T>, t2: GenType<'c, T>)
+/// fn same_type<'c, T>(t1: UniqueType<'c, T>, t2: UniqueType<'c, T>)
 /// {
 ///   panic!("this is impossible!")
 /// }
 /// ```
 /// 
-/// The following fails because `GenType` is not `Copy`: 
+/// The following fails because `UniqueType` is not `Copy`: 
 /// 
 /// ```compile_fail
 /// # use genz::*;
-/// # fn same_type<'c, T>(t1: GenType<'c, T>, t2: GenType<'c, T>) {}
-/// with_type::<u8, _>(|t1: GenType<'_, u8>| {
+/// # fn same_type<'c, T>(t1: UniqueType<'c, T>, t2: UniqueType<'c, T>) {}
+/// with_type::<u8, _>(|t1: UniqueType<'_, u8>| {
 /// 	same_type(t1, t1);
 /// });
 /// ```
 /// 
-/// whereas the following fails because because a `GenType` internally contains a `Region` marker, which is invariant
+/// whereas the following fails because because a `UniqueType` internally contains a `Region` marker, which is invariant
 /// with respect to its lifetime:
 /// 
 /// ```compile_fail
 /// # use genz::*;
-/// # fn same_type<'c, T>(t1: GenType<'c, T>, t2: GenType<'c, T>) {}
-/// with_type::<u8, _>(|t1: GenType<'_, u8>| {
-/// 	with_type::<u8, _>(|t2: GenType<'_, u8>| {
+/// # fn same_type<'c, T>(t1: UniqueType<'c, T>, t2: UniqueType<'c, T>) {}
+/// with_type::<u8, _>(|t1: UniqueType<'_, u8>| {
+/// 	with_type::<u8, _>(|t2: UniqueType<'_, u8>| {
 /// 		same_type(t1, t2); // fails because `t1` and `t2` are tagged with different lifetimes
 /// 	});	
 /// });
@@ -154,34 +134,36 @@ impl<Z: Storable> Gen<Z>
 /// 
 /// ```compile_fail
 /// # use genz::*;
-/// fn different_type<'c, T, U>(t1: GenType<'c, T>, t2: GenType<'c, U>) 
+/// fn different_type<'c, T, U>(t1: UniqueType<'c, T>, t2: UniqueType<'c, U>) 
 /// {
 /// 
 /// }
 /// 
-/// with_type::<u8, _>(|t1: GenType<'_, u8>| {
-/// 	with_type::<u16, _>(|t2: GenType<'_, u16>| {
+/// with_type::<u8, _>(|t1: UniqueType<'_, u8>| {
+/// 	with_type::<u16, _>(|t2: UniqueType<'_, u16>| {
 ///         // fails to compile because `t1` and `t2` have different lifetimes
 /// 		different_type(t1, t2);
 /// 	});	
 /// });
 /// ```
 /// 
-/// For this, we'll need the function `try_with_types`, which creates a tuple of generative type markers in 
+/// For this, we'll need the function `try_with_types`, which creates a tuple of unique type markers in 
 /// the same region: 
 /// 
 /// ``` 
-/// use genz::{GenType, try_with_types};
-/// # fn different_type<'c, T, U>(t1: GenType<'c, T>, t2: GenType<'c, U>) {}
+/// use genz::{UniqueType, try_with_types};
+/// # fn different_type<'c, T, U>(t1: UniqueType<'c, T>, t2: UniqueType<'c, U>) {}
 /// 
-/// let result = try_with_types::<(u8, u16), _>(|_, (t1, t2): (GenType<'_, u8>, GenType<'_, u16>)| {
+/// let result = try_with_types::<(u8, u16), _>(|_, (t1, t2): (UniqueType<'_, u8>, UniqueType<'_, u16>)| {
 /// 	different_type(t1, t2);
 /// });
 /// 
 /// assert_eq!(Some(()), result);
 /// ```
 /// 
-/// Notice that `try_with_types` returns an `Option`. This is because the function needs to prove that its input types are distinct, but it cannot do so at compile time(pending stabilization negative traits and auto impls). If we annotate the function call with a tuple containing duplicates, it will return `None`:
+/// Notice that `try_with_types` returns an `Option`. This is because the function needs to prove that its input types 
+/// are distinct, but it cannot do so at compile time(pending stabilization negative traits and auto impls). 
+/// If we annotate the function call with a tuple containing duplicates, it will return `None`:
 /// 
 /// ``` 
 /// # use genz::*;
@@ -189,12 +171,12 @@ impl<Z: Storable> Gen<Z>
 /// assert_eq!(None, try_with_types::<(u8, u16, u8), _>(|_, _| panic!("should not happen")));
 /// ```
 #[repr(transparent)]
-pub struct GenType<'c, T>(Region<'c>, PhantomData<T>);
+pub struct UniqueType<'c, T>(Region<'c>, PhantomData<T>);
 
-impl<'c, T> From<GenType<'c, T>> for Region<'c>
+impl<'c, T> From<UniqueType<'c, T>> for Region<'c>
 {
   #[inline]
-  fn from(value: GenType<'c, T>) -> Self {
+  fn from(value: UniqueType<'c, T>) -> Self {
     value.0
   }
 }
@@ -213,13 +195,13 @@ pub trait StaticTuple
   fn distinct() -> bool;
 }
 
-/// A trait for creating a tuples of generative type markers.
+/// A trait for creating a tuples of unique type markers.
 pub trait TryGenTuple: StaticTuple
 {
-  /// A tuple of type markers which are generative in the region `'c`.
+  /// A tuple of type markers which are unique for the lifetime `'c`.
   type Tuple<'c>;
 
-  /// Returns a tuple of type markers which are generative in region `'c` if every requested type is distinct.
+  /// Returns a tuple of type markers which are unique for lifetime `'c` if every type in `Self` is distinct.
   fn try_gen_tuple<'c>(region: Region<'c>) -> Option<Self::Tuple<'c>>;
 }
 
@@ -244,16 +226,25 @@ macro_rules! gen_tuple {
         }  
       }
 
+      impl<$($tt),+> Storable for ($($tt,)+)
+        where 
+          $($tt: Storable,)+
+          ($($tt,)+): From<($($tt::Generative<'static>,)+)>,
+          ($($tt,)+): BorrowMut<($($tt::Generative<'static>,)+)>
+      {
+        type Generative<'c> = ($($tt::Generative<'c>,)+);
+      }
+
       impl<$($tt),+> TryGenTuple for ($($tt,)+)
         where 
           $($tt: 'static),+
       {
-        type Tuple<'c> = ($(GenType<'c, $tt>,)+);
+        type Tuple<'c> = ($(UniqueType<'c, $tt>,)+);
 
         #[inline]
         fn try_gen_tuple<'c>(region: Region<'c>) -> Option<Self::Tuple<'c>>
         {
-          <($($tt,)+)>::distinct().then(|| ($(GenType(region, PhantomData::<$tt>),)+))
+          <($($tt,)+)>::distinct().then(|| ($(UniqueType(region, PhantomData::<$tt>),)+))
         }
       }
     };

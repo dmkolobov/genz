@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-/// A marker referring to a covariant lifetime.
+/// A covariant lifetime marker.
 ///
 /// Because `f` is defined for an arbitrary lifetime `'c` and `Z` has a fixed lifetime, values referencing `'c` are 
 /// prevented from escaping the closure:
@@ -66,7 +66,7 @@ pub fn with_scope<F, Z>(f: F) -> Z
   f(Scope(PhantomData))
 }
 
-/// A marker referring to an invariant lifetime.
+/// An invariant lifetime marker.
 ///
 /// Region markers are created via the `with_region` function. 
 ///
