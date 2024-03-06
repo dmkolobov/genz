@@ -1,11 +1,11 @@
 [package]
 name = "genz"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/dmkolobov/genz"
 readme = "README.md"
-description = "Access guards based on invariant lifetime markers."
+description = "Uniqueness of types via invariant lifetimes."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

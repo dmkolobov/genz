@@ -1,4 +1,4 @@
-//! Markers for proving uniqueness of types using invariant lifetimes.
+//! Uniqueness of types via invariant lifetimes.
 //!
 //! Provides a `UniqueType` marker which makes it impossible to call the following without resorting to `unsafe` code:
 //!

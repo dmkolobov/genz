@@ -1,5 +1,5 @@
 # genz 
-Markers for proving uniqueness of types using invariant lifetimes.
+Uniqueness of types via invariant lifetimes.
 
 Provides a non-`Copy` zero-sized type-marker called `UniqueType`, which makes it impossible to call the following
 without resorting to `unsafe` code:
