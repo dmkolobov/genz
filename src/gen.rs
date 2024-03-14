@@ -28,7 +28,7 @@ pub fn with_types<Types: TryGenTuple, Z>(f: impl for <'c> FnOnce(Region<'c>, Typ
 
 /// A structure for storing values containing unique types.
 #[repr(transparent)]
-pub struct Gen<T>(T);
+pub struct Gen<Z>(Z);
 
 impl<Z: Storable> Gen<Z>
 {
@@ -78,16 +78,23 @@ impl<Z: Storable> Gen<Z>
     Self::try_from_types(f).unwrap()
   }
 
+  /// Invoke `f` with the moved value.
+  #[inline]
+  pub fn with<R>(self, f: impl for <'c> FnOnce(Z::Generative<'c>) -> R) -> R
+  {
+    f(self.0.into())
+  }
+
   /// Invoke `f` with a reference to the value.
   #[inline]
-  pub fn with_ref<R>(&self, f: impl for<'c> FnOnce(&Z::Generative<'c>) -> R) -> R 
+  pub fn with_ref<R>(&self, f: impl for <'c> FnOnce(&Z::Generative<'c>) -> R) -> R 
   {
     f(self.0.borrow())
   }
 
   /// Invoke `f` with a mutable reference to the value.
   #[inline] 
-  pub fn with_mut<R>(&mut self, f: impl for<'c> FnOnce(&mut Z::Generative<'c>) -> R) -> R 
+  pub fn with_mut<R>(&mut self, f: impl for <'c> FnOnce(&mut Z::Generative<'c>) -> R) -> R 
   {
     f(self.0.borrow_mut())
   }
@@ -230,7 +237,8 @@ macro_rules! gen_tuple {
         where 
           $($tt: Storable,)+
           ($($tt,)+): From<($($tt::Generative<'static>,)+)>,
-          ($($tt,)+): BorrowMut<($($tt::Generative<'static>,)+)>
+          ($($tt,)+): BorrowMut<($($tt::Generative<'static>,)+)>,
+          ($($tt,)+): Into<($($tt::Generative<'static>,)+)>
       {
         type Generative<'c> = ($($tt::Generative<'c>,)+);
       }

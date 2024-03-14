@@ -23,7 +23,7 @@ use crate::{Gen, Region, UniqueType};
 /// x.with_mut(|s| s.name = "foo");
 /// assert_eq!("foo", x.with_ref(|s| s.name));
 /// ```
-pub trait Storable: BorrowMut<Self::Generative<'static>> + From<Self::Generative<'static>>
+pub trait Storable: BorrowMut<Self::Generative<'static>> + From<Self::Generative<'static>> + Into<Self::Generative<'static>>
 {
   /// A value containing types which are unique for lifetime '`c`.
   type Generative<'c>;
